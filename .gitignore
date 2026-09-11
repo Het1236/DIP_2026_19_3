@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data (link/document sources instead of committing large rasters)
+*.tif
+*.tiff
+*.safe
+data/raw/
+
+# IDE
+.vscode/
+.idea/
