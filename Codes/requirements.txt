@@ -1,0 +1,20 @@
+# Core scientific stack
+numpy==2.4.2
+pandas==3.0.1
+matplotlib==3.10.8
+scikit-learn==1.9.0
+
+# Geospatial raster/vector I/O
+rasterio==1.5.1
+geopandas==1.1.4
+shapely==2.1.2
+pyproj==3.8.0
+
+# Classical image features (GLCM texture etc.)
+scikit-image==0.26.0
+
+# Sentinel-1 SAR acquisition (Google Earth Engine)
+earthengine-api==1.7.43
+
+# Testing
+pytest==9.1.1
