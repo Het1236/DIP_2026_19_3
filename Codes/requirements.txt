@@ -12,6 +12,7 @@ pyproj==3.8.0
 
 # Classical image features (GLCM texture etc.)
 scikit-image==0.26.0
+scipy==1.17.1
 
 # Sentinel-1 SAR acquisition (Google Earth Engine)
 earthengine-api==1.7.43

@@ -19,6 +19,15 @@ Thumbs.db
 data/raw/
 .dev_cache/
 
+# Real YieldSAT dataset (~15GB, local only, never committed)
+/dataset/
+
+# Internal working notes, not part of the submission
+/DECISIONS.md
+/PROJECT_PLAN.md
+/Learning_Notes/
+/Miranda_YieldSAT_*.pdf
+
 # pytest
 .pytest_cache/
 
