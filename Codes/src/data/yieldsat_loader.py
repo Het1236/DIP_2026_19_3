@@ -113,8 +113,11 @@ def get_yield_mask_path(field_root: Path) -> Path:
 
 
 def raw_country_dir(dataset_root: Path, country: str) -> Path:
-    """dataset/<Country>/<Country>_raw"""
-    return Path(dataset_root) / country / f"{country}_raw"
+    """dataset/<Country>/<Country>_raw, or dataset/<Country> itself when
+    the fields were extracted directly under it (Uruguay's layout)."""
+    country_dir = Path(dataset_root) / country
+    nested = country_dir / f"{country}_raw"
+    return nested if nested.is_dir() else country_dir
 
 
 def preprocessed_country_path(dataset_root: Path, country: str) -> Path:

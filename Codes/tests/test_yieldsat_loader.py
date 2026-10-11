@@ -121,3 +121,12 @@ def test_iter_country_field_dirs(tmp_path):
     field_dirs = list(iter_country_field_dirs(tmp_path, "Argentina"))
     assert len(field_dirs) == 2
     assert all(d.is_dir() for d in field_dirs)
+
+
+def test_raw_country_dir_handles_nested_and_flat_layouts(tmp_path):
+    from data.yieldsat_loader import raw_country_dir
+
+    (tmp_path / "Argentina" / "Argentina_raw").mkdir(parents=True)
+    (tmp_path / "Uruguay").mkdir()
+    assert raw_country_dir(tmp_path, "Argentina") == tmp_path / "Argentina" / "Argentina_raw"
+    assert raw_country_dir(tmp_path, "Uruguay") == tmp_path / "Uruguay"
