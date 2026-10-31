@@ -1,0 +1,3 @@
+country,n_test,accuracy
+Argentina,24,0.875
+Brazil,30,0.9666666666666667
