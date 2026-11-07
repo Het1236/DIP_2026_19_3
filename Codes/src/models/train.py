@@ -102,6 +102,7 @@ def tune_and_evaluate(
     model_name: str = "random_forest",
     cv: int = 5,
     seed: int = RANDOM_SEED,
+    n_jobs: int = -1,
 ) -> dict:
     """Same as train_and_evaluate, but picks hyperparameters via grid
     search with stratified cross-validation on the training split only,
@@ -117,7 +118,7 @@ def tune_and_evaluate(
     param_grid = PARAM_GRIDS[model_name]
     cv_splitter = StratifiedKFold(n_splits=cv, shuffle=True, random_state=seed)
 
-    search = GridSearchCV(base_model, param_grid, cv=cv_splitter, scoring="f1_macro", n_jobs=-1)
+    search = GridSearchCV(base_model, param_grid, cv=cv_splitter, scoring="f1_macro", n_jobs=n_jobs)
     search.fit(X_train, y_train)
 
     best_model = search.best_estimator_
