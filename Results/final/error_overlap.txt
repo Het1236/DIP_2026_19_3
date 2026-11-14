@@ -1,0 +1,23 @@
+optical_only (svm): 13 of 54 wrong
+  rows = true ['corn', 'soybean', 'wheat'], columns = predicted
+  [12, 3, 3]
+  [3, 15, 0]
+  [3, 1, 14]
+
+sar_only (random_forest): 11 of 54 wrong
+  rows = true ['corn', 'soybean', 'wheat'], columns = predicted
+  [11, 6, 1]
+  [3, 14, 1]
+  [0, 0, 18]
+
+fused (random_forest): 4 of 54 wrong
+  rows = true ['corn', 'soybean', 'wheat'], columns = predicted
+  [16, 1, 1]
+  [1, 17, 0]
+  [0, 1, 17]
+
+Wrong in both optical-only and SAR-only : 5
+Wrong in exactly one of the two         : 14
+  of these, fused model gets right      : 12
+Wrong in both, fused model still wrong  : 2
+Right in both, fused model wrong        : 0

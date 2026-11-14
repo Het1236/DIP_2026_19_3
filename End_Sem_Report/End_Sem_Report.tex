@@ -1,10 +1,10 @@
-% DRAFT started in Week 9. Results and Discussion are drafted. The other sections
-% are shortened from the mid-sem report and need a final pass in Week 10.
 \documentclass[conference]{IEEEtran}
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{amsmath}
 \usepackage{cite}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta}
 \graphicspath{{../Results/final/}{../Results/analysis/}{../Results/real_fields/}}
 
 \begin{document}
@@ -19,8 +19,7 @@ Code: github.com/Het1236/DIP\_2026\_19\_3}}
 \maketitle
 
 \begin{abstract}
-% TODO Week 10: final pass after the numbers are locked.
-We study crop classification from optical and radar satellite images together. We use the YieldSAT dataset for Argentina and Brazil. We build a pipeline that removes clouds from Sentinel-2 images and reduces speckle in Sentinel-1 images. From 270 real fields we extract vegetation indices, radar backscatter statistics and texture features. We train Random Forest and SVM models on optical-only, SAR-only and fused features. Fused features give the best result. In nested 5-fold cross validation the fused SVM reaches a macro F1-score of 0.91 and the best single image type reaches 0.81. On one held-out test split the fused Random Forest reaches 0.93. A model trained on one country does not work well on the other, and its macro F1-score falls to about 0.48.
+Knowing which crop grows in which field is the first step of food planning, and it must be known early and over areas too large to survey on foot. Free satellite programs now supply the data for this. Sentinel-2 measures how green a field is at 10~m resolution, and Sentinel-1 radar measures its structure and moisture through clouds. Because the two sensors fail in different ways, each could cover the weakness of the other. Optical images are blocked by clouds, since our cloud mask rejected about 45\% of the dates in three example fields, while radar images are free of clouds but corrupted by speckle noise. The open question is therefore how much a classifier gains from using both sensors, and whether that gain survives in a country it has not seen. We answer it with a classical feature-fusion framework for the YieldSAT dataset. The framework masks clouds and builds a peak-season composite from Sentinel-2, filters speckle and aligns Sentinel-1 to the same grid, and joins 21 hand-crafted features into one vector for a Random Forest and an SVM. On 270 real fields from Argentina and Brazil, the fused SVM reaches a macro F1-score of 0.91 in nested cross validation and 0.87 when whole farms are held out, against 0.81 for the best single sensor in both cases. The two sensors make different mistakes, since only 5 of 54 test fields are misclassified by both, and this is why fusion helps. The gain is smaller for the Random Forest, where it almost vanishes when farms are held out, and it does not cross borders, because a model trained in one country scores only 0.48 in the other. Fusion therefore gives a clear but modest improvement inside a region, and a new region needs its own labelled fields.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -28,45 +27,106 @@ crop classification, SAR, optical, feature fusion, Sentinel-1, Sentinel-2, Yield
 \end{IEEEkeywords}
 
 \section{Introduction}
-% TODO Week 10: shorten the mid-sem introduction and state the research question.
-Knowing which crop grows in a field helps with farm planning and food security. Optical satellites are easy to read but clouds block the view. Radar satellites work through clouds but their images are noisy. In our real fields the cloud mask kept only about 55\% of the optical dates. We ask whether features from both image types together classify crops better than features from either one alone.
+Crop type is the basic fact behind food planning. Agencies need to know what is grown, where it is grown and how much land it covers, and they need this during the season and not after it. Satellites are the only practical way to cover such areas often enough.
 
-We use classical hand-crafted features and classical machine learning. We do not use deep learning. We use the YieldSAT dataset \cite{yieldsat}. Our group was assigned Argentina and Brazil.
+Two free sensors make this possible. Sentinel-2 is an optical satellite. It measures reflected sunlight in 12 bands at 10~m, which lets us compute vegetation indices that track how green a field is. Sentinel-1 \cite{sentinel1} is a radar satellite. It sends its own microwave pulse and records what returns in two polarizations, VV and VH. The returned signal depends on the structure and water content of the crop, and clouds do not stop it.
+
+Each sensor has a weak point, and the weak points are different. In three example fields the cloud and shadow mask removed about 45\% of the optical dates. Radar is not blocked by clouds, but its images carry speckle, a grainy noise that hides the field signal. This suggests that fusion should help, but it leaves three questions open. How much does it help? Which sensor carries the result? Does a model built in one country still work in another?
+
+The YieldSAT dataset \cite{yieldsat} gives Sentinel-2 images and crop labels but no radar data. Our group was assigned Argentina and Brazil. We therefore add Sentinel-1 images ourselves and build a framework that answers the three questions with classical, explainable methods and no deep learning. Our contributions are: (i) a pipeline that prepares both image types on a common grid, (ii) a table of 21 fused features for 270 real fields, (iii) a comparison of optical-only, SAR-only and fused classification under a test split, nested cross validation with and without whole farms held out, and a test across countries, and (iv) an error analysis that shows why fusion helps.
 
 \section{Methodology}
-% TODO Week 10: add one pipeline figure and check the equations against the mid-sem report.
+Fig.~\ref{fig:pipeline} shows the pipeline. It has an optical branch and a SAR branch. Both give images on the same 10~m grid for each field.
+
+\begin{figure*}[t]
+\centering
+\begin{tikzpicture}[
+  box/.style={draw, rounded corners=2pt, minimum height=0.95cm, text width=2.15cm, align=center, font=\scriptsize, fill=gray!8},
+  hot/.style={draw, rounded corners=2pt, minimum height=0.95cm, text width=2.15cm, align=center, font=\scriptsize, fill=red!55!black, text=white},
+  arr/.style={-{Stealth[length=2mm]}, thick},
+  node distance=0.5cm]
+\node[box] (s2) {Sentinel-2\\12 bands + SCL};
+\node[box, right=of s2] (cm) {Cloud mask\\SCL 4, 5, 6, 7};
+\node[box, right=of cm] (comp) {Median composite\\30\% to 70\% of season};
+\node[box, right=of comp] (of) {4 indices and 8 texture values (12 features)};
+\node[box, below=0.55cm of s2] (s1) {Sentinel-1\\VV, VH, median of scenes};
+\node[box, right=of s1] (lee) {Lee filter\\$5\times5$ window};
+\node[box, right=of lee] (al) {Align to the optical grid};
+\node[box, right=of al] (sf) {5 statistics and 8 texture values (13 features)};
+\node[hot, right=0.7cm of of, yshift=-0.75cm] (fu) {Fusion\\21 features};
+\node[hot, right=0.5cm of fu] (ml) {Random Forest\\SVM};
+\draw[arr] (s2)--(cm); \draw[arr] (cm)--(comp); \draw[arr] (comp)--(of);
+\draw[arr] (s1)--(lee); \draw[arr] (lee)--(al); \draw[arr] (al)--(sf);
+\draw[arr] (of.east)--(fu.north west); \draw[arr] (sf.east)--(fu.south west);
+\draw[arr] (fu)--(ml);
+\end{tikzpicture}
+\caption{Processing pipeline. Optical branch on top, SAR branch below. The features of both branches are fused before the classifier.}
+\label{fig:pipeline}
+\end{figure*}
+
 \subsection{Data and preprocessing}
-YieldSAT has 751 fields for Argentina and 551 for Brazil. It has Sentinel-2 images and crop labels but no radar data. We download Sentinel-1 data for the same fields through Google Earth Engine \cite{gee}. For the optical images we keep clear pixels using the scene classification layer. We build a median composite from the middle part of the season, from 30\% to 70\% of the way between seeding and harvest. For the radar images we take the median of the scenes, apply a $5\times5$ Lee filter \cite{lee} and align the result to the optical grid.
+YieldSAT has 751 fields for Argentina and 551 for Brazil. Each Sentinel-2 image has 12 bands at 10~m resolution and comes with a scene classification layer (SCL). We keep the SCL classes 4, 5, 6 and 7. We drop a date when fewer than 20\% of the field pixels are usable. For each pixel and band the composite is the median over the valid dates:
+\begin{equation}
+C(x,y,b)=\operatorname*{median}_{t\in T(x,y)} I_t(x,y,b)
+\end{equation}
+We build the composite from the middle part of the season, from 30\% to 70\% of the way between seeding and harvest. We use one rule for all crops because we have no crop calendar.
+
+We download Sentinel-1 scenes in interferometric wide mode with VV and VH polarization for the same fields and season through Google Earth Engine \cite{gee}. We take the median of the scenes and download it at 10~m in decibels. We reduce speckle with a $5\times5$ Lee filter \cite{lee}:
+\begin{equation}
+\hat I=\bar I+k\,(I-\bar I),\qquad k=\frac{\sigma_w^2}{\sigma_w^2+\overline{\sigma_w^2}}
+\end{equation}
+Here $\bar I$ and $\sigma_w^2$ are the mean and variance in the window and $\overline{\sigma_w^2}$ is the average window variance over the image. We then resample the radar image onto the optical grid with bilinear interpolation.
 
 \subsection{Features}
 From each field we compute the means of four vegetation indices: NDVI \cite{rouse}, EVI, GNDVI and NDWI. From the radar images we compute the mean and standard deviation of VV and VH and the VV minus VH difference. We also compute four texture features from the gray level co-occurrence matrix \cite{haralick}: contrast, homogeneity, energy and correlation. They are computed on NIR, NDVI, VV and VH. This gives 12 optical features and 13 SAR features.
 
 \subsection{Fusion and models}
-Fusion is early fusion. We join the optical and SAR features into one vector. We then drop one feature from each pair with a correlation above 0.95. This step uses the training data only. It reduces the 25 features to 21. We train a Random Forest and an SVM with an RBF kernel. Hyperparameters are chosen by 5-fold cross validation on the training data, scored by macro F1-score. The same search is used for all three feature sets.
+Fusion is early fusion. We join the optical and SAR features into one vector. We then drop one feature from each pair with a correlation above 0.95. This step uses the training data only. It reduces the 25 features to 21. We train a Random Forest and an SVM with an RBF kernel. Both use balanced class weights and the SVM scales the features first. Hyperparameters are chosen by a grid search with 5-fold cross validation on the training data, scored by macro F1-score. The grid covers the number of trees, the depth and the leaf size for the Random Forest, and $C$ and $\gamma$ for the SVM. The same search is used for all three feature sets. All random seeds are 42.
+
+\subsection{Evaluation}
+We report accuracy and macro F1-score, which gives each crop the same weight. Random guessing among three crops scores about 0.33. The main test is a stratified 80\%/20\% split of the fields. We repeat it as a nested 5-fold cross validation over all fields, where tuning and the correlation filter see only the training part of each fold. Finally we train on one country and test on the other.
 
 \section{Results}
 \subsection{Experimental setup}
-We sampled 50 fields for each country and crop, using fields with Good or Average quality. This gives 300 fields. Features were built for 270 of them. Of the other 30, 16 had no Sentinel-1 scenes in their date range, 11 were too cloudy, 2 had no Sentinel-2 date inside the season window and 1 failed because of a server error. The 270 fields are 133 from Argentina and 137 from Brazil. They contain 91 corn, 88 soybean and 91 wheat fields. We split them 80\% and 20\% with the same crop mix in both parts. This gives 216 training and 54 test fields. Each crop has 18 test fields.
+We sampled 50 fields for each country and crop, using fields with Good or Average quality. This gives 300 fields. Features were built for 270 of them. Of the other 30, 16 had no Sentinel-1 scenes in their date range, 11 were too cloudy, 2 had no Sentinel-2 date inside the season window and 1 failed because of a server error. The 270 fields are 133 from Argentina and 137 from Brazil. They contain 91 corn, 88 soybean and 91 wheat fields. The split gives 216 training and 54 test fields, with 18 test fields per crop.
+
+\subsection{What the pipeline produces}
+Fig.~\ref{fig:corn} shows one real corn field. Panels (a) and (b) are the cloud-free optical composite and its NDVI. Panel (c) is the Sentinel-1 VV image as downloaded, and panel (d) is the same image after the Lee filter and alignment. The grain in (c) is speckle. Panel (d) is visibly smoother and the field boundary is still sharp. On a separate real composite of 112 by 113 pixels from 5 scenes, the filter lowered the standard deviation of VV from 1.35 to 1.08~dB, about 20\%, and the mean stayed at $-12.87$~dB. The filter can do this because it averages strongly where the local variance is low and leaves a pixel nearly unchanged where the variance is high. Keeping the mean matters, because the mean VV later turns out to be our strongest feature.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.6\textwidth]{report_corn_field.png}
+\caption{Real corn field in Argentina. (a) Cloud-free optical composite. (b) NDVI. (c) Sentinel-1 VV as downloaded. (d) VV after the Lee filter and alignment to the optical grid.}
+\label{fig:corn}
+\end{figure*}
+
+The same pipeline was run on one real field per crop, with a whole-season composite. Cloud masking kept 52 of 96 dates for corn, 47 of 81 for soybean and 49 of 93 for wheat, 148 of 270 or about 55\% in total. The optical branch therefore loses nearly half of its dates, while clouds do not affect the radar branch, which had 12 to 15 scenes in each field. The radar values also differ between crops. The mean VV is $-10.23$~dB for corn, $-9.44$~dB for soybean and $-14.90$~dB for wheat, so one radar number already separates wheat in these three fields. In contrast, the optical means are close. With the peak-season window the mean NDVI over the 270 fields is 0.80 for corn, 0.78 for soybean and 0.77 for wheat. These values are high, as expected at full canopy, but they differ by only 0.03. The whole-season NDVI of these three fields was lower, 0.41 to 0.52, probably because that composite mixes early and late dates when the canopy is thin. The consequence is clear. The NDVI mean alone cannot separate the crops, so the extra information has to come from radar and texture features.
 
 \subsection{Optical-only, SAR-only and fused features}
-Table~\ref{tab:main} and Fig.~\ref{fig:bars} show the test results. Fused features give the best result for both models. The fused Random Forest has an accuracy of 0.93 and gets 50 of the 54 test fields right. The best single-type model is the SAR Random Forest, with an accuracy of 0.80 and 43 of 54 correct. Optical features give the lowest result with Random Forest.
+Table~\ref{tab:main} and Fig.~\ref{fig:bars} give the main comparison. Each bar is the macro F1-score of one feature set and one model. The left panel is the single test split and the right panel is the nested cross validation, where the black whisker is the standard deviation over the 5 folds.
+
+The same order appears in both panels. Optical features score lowest, SAR features score higher and fused features score highest. Fused features win in all four comparisons, which are two models on two evaluations. In cross validation the fused SVM reaches 0.91, the best single sensor reaches 0.81, and optical alone reaches 0.63 with Random Forest and 0.71 with SVM. The gains are not symmetric. Adding SAR to optical raises the macro F1-score by about 0.20 for the SVM and 0.23 for the Random Forest. Adding optical to SAR raises it by about 0.10 for the SVM and only 0.05 for the Random Forest. Radar therefore contributes more than optical in our data, which fits the cloud loss seen above. We have not tested whether the cloud loss is the cause.
+
+The size of the gain needs care. The fold-to-fold standard deviation is 0.05 to 0.09, so the SVM gain of 0.10 stands out but the Random Forest gain of 0.05 does not. The test split and the cross validation also disagree on the best fused model, the Random Forest on the split and the SVM in cross validation. With 54 test fields one field moves the accuracy by 2\%, so we do not name one best model. With random folds, fusion gives a gain of about 0.05 to 0.10, and 21 numbers per field reach a macro F1-score of 0.91. The next subsection checks how much of this survives a stricter split.
 
 \begin{table}[t]
-\caption{Test-set results (54 fields) after tuning.}
+\caption{Macro F1-score and accuracy on the 54 test fields, and nested 5-fold cross validation over all 270 fields (mean $\pm$ std).}
 \label{tab:main}
 \centering
 \footnotesize
-\setlength{\tabcolsep}{4pt}
-\begin{tabular}{llccc}
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{llcccc}
 \toprule
-Features & Model & \# feat. & Acc. & Macro F1\\
+ & & & \multicolumn{2}{c}{Test split} & CV\\
+\cmidrule(lr){4-5}\cmidrule(lr){6-6}
+Features & Model & \# feat. & Acc. & F1 & F1 (mean $\pm$ std)\\
 \midrule
-Optical & RF  & 12 & 0.65 & 0.63\\
-Optical & SVM & 12 & 0.76 & 0.76\\
-SAR     & RF  & 13 & 0.80 & 0.79\\
-SAR     & SVM & 13 & 0.76 & 0.76\\
-Fused   & RF  & 21 & \textbf{0.93} & \textbf{0.93}\\
-Fused   & SVM & 21 & 0.91 & 0.91\\
+Optical & RF  & 12 & 0.65 & 0.63 & 0.63 $\pm$ 0.05\\
+Optical & SVM & 12 & 0.76 & 0.76 & 0.71 $\pm$ 0.05\\
+SAR     & RF  & 13 & 0.80 & 0.79 & 0.81 $\pm$ 0.08\\
+SAR     & SVM & 13 & 0.76 & 0.76 & 0.80 $\pm$ 0.06\\
+Fused   & RF  & 21 & \textbf{0.93} & \textbf{0.93} & 0.86 $\pm$ 0.09\\
+Fused   & SVM & 21 & 0.91 & 0.91 & \textbf{0.91} $\pm$ 0.06\\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -78,75 +138,62 @@ Fused   & SVM & 21 & 0.91 & 0.91\\
 \label{fig:bars}
 \end{figure}
 
-\subsection{Nested cross validation}
-With 54 test fields, one field changes the accuracy by about 2\%. To check that the result does not depend on one split, we ran a nested 5-fold cross validation over all 270 fields. The tuning and the correlation filter use only the training part of each fold. Table~\ref{tab:cv} gives the mean and the standard deviation over the 5 folds. The fused SVM has the best result, a macro F1-score of 0.91. The best single-type models are the SAR ones, with 0.81 for Random Forest and 0.80 for SVM. Optical features reach 0.63 with Random Forest and 0.71 with SVM. The fused SVM is about 0.10 above the best single-type model. The fused Random Forest is only about 0.05 above it, and this is smaller than the spread between folds (0.08 to 0.09).
-
-\begin{table}[t]
-\caption{Nested 5-fold cross validation over all 270 fields (mean $\pm$ std).}
-\label{tab:cv}
-\centering
-\footnotesize
-\begin{tabular}{llcc}
-\toprule
-Features & Model & Accuracy & Macro F1\\
-\midrule
-Optical & RF & 0.63 $\pm$ 0.05 & 0.63 $\pm$ 0.05\\
-Optical & SVM & 0.70 $\pm$ 0.05 & 0.71 $\pm$ 0.05\\
-SAR & RF & 0.81 $\pm$ 0.08 & 0.81 $\pm$ 0.08\\
-SAR & SVM & 0.81 $\pm$ 0.06 & 0.80 $\pm$ 0.06\\
-Fused & RF & 0.86 $\pm$ 0.09 & 0.86 $\pm$ 0.09\\
-Fused & SVM & \textbf{0.91} $\pm$ 0.06 & \textbf{0.91} $\pm$ 0.06\\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Error analysis}
-Fig.~\ref{fig:cm} shows the confusion matrices. For the fused Random Forest the macro F1-scores are 0.91 for corn, 0.92 for soybean and 0.94 for wheat. No crop is clearly weak. The accuracy is 0.88 for Argentina (21 of 24 fields) and 0.97 for Brazil (29 of 30 fields). This gap is 2 fields, so we do not treat it as a real difference.
-
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.85\textwidth]{final_confusion_matrices.png}
+\includegraphics[width=0.68\textwidth]{final_confusion_matrices.png}
 \caption{Confusion matrices on the test set for the best model of each feature set.}
 \label{fig:cm}
 \end{figure*}
 
-The most important features are the mean VV and the VV minus VH difference, both from SAR. The mean EVI is third. SAR features hold 65\% of the total importance and optical features hold 35\%. Simple mean values matter more than texture features. The best texture feature is the NIR correlation with an importance of about 0.06.
-
-\subsection{Cross-country test}
-We trained on one country and tested on the other (Table~\ref{tab:cross}). The accuracy is 0.52 for Argentina to Brazil and 0.45 for Brazil to Argentina. The macro F1-score falls from 0.93 on the mixed test set to about 0.48. Random guessing among three crops gives about 0.33.
+\subsection{Keeping farms apart}
+\label{sec:farm}
+Random folds can put fields of one farm on both sides of the split, and such fields look alike. Our 270 fields come from only 42 farms, and the largest farm holds 43 of them. We therefore repeated the nested cross validation with whole farms held out, so that every field of a farm falls in the same fold (Table~\ref{tab:farm}). The scores fall for five of the six models, by 0.04 to 0.06, and stay level for the SAR SVM. The fused SVM falls from 0.91 to 0.87 and the fused Random Forest from 0.86 to 0.82. The order of the feature sets does not change, but the gain over the best single sensor shrinks. It is 0.055 for the SVM (0.865 against 0.810), which is only slightly more than the fold spread of 0.03 to 0.05. For the Random Forest it is about 0.01, which is within the spread. The gain of fusion over optical alone is unchanged, about 0.20 for the SVM. The most direct reading is that random folds let the model see farms it was later tested on, but we have not tested this. The result changes how we state our claim. Fusion gives a real but modest gain, about 0.05 for the SVM, and the Random Forest gain is not shown. The earlier figures of 0.91 and 0.93 are the optimistic end.
 
 \begin{table}[t]
-\caption{Train on one country, test on the other (fused Random Forest).}
-\label{tab:cross}
+\caption{Nested 5-fold cross validation, macro F1-score (mean $\pm$ std), with random folds and with whole farms held out.}
+\label{tab:farm}
 \centering
 \footnotesize
-\begin{tabular}{llccc}
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{llcc}
 \toprule
-Train & Test & \# train & Acc. & Macro F1\\
+Features & Model & Random folds & Farms held out\\
 \midrule
-Argentina & Brazil    & 133 & 0.52 & 0.51\\
-Brazil    & Argentina & 137 & 0.45 & 0.44\\
+Optical & RF  & 0.63 $\pm$ 0.05 & 0.57 $\pm$ 0.10\\
+Optical & SVM & 0.71 $\pm$ 0.05 & 0.67 $\pm$ 0.06\\
+SAR     & RF  & 0.81 $\pm$ 0.08 & 0.76 $\pm$ 0.08\\
+SAR     & SVM & 0.80 $\pm$ 0.06 & 0.81 $\pm$ 0.05\\
+Fused   & RF  & 0.86 $\pm$ 0.09 & 0.82 $\pm$ 0.07\\
+Fused   & SVM & \textbf{0.91} $\pm$ 0.06 & \textbf{0.87} $\pm$ 0.03\\
 \bottomrule
 \end{tabular}
 \end{table}
 
+\subsection{Why fusion helps}
+Fig.~\ref{fig:cm} explains the gain. Each panel is the test-split confusion matrix of the best model of one feature set, with true crops in rows and predicted crops in columns. The diagonal grows from 41 correct fields of 54 for optical (SVM) to 43 for SAR (Random Forest) and 50 for fused (Random Forest).
+
+The two single-sensor models fail in different places. The SAR model identifies all 18 wheat fields but confuses corn with soybean: 6 corn fields are called soybean and 3 soybean fields are called corn. The optical model is weaker on wheat, with 4 of 18 wrong, and its corn errors split evenly, 3 to soybean and 3 to wheat. Counting by field makes the point sharper. The optical model is wrong on 13 test fields and the SAR model on 11, but only 5 fields are wrong in both. Another 14 fields are wrong in exactly one of the two, and the fused model corrects 12 of these 14. It makes no new error on a field that both single-sensor models classify correctly. A likely reason is that the sensors respond to different properties, structure and water for radar and leaf color and greenness for optical, so one sensor often holds the clue that the other lacks. The SAR errors also suggest that corn and soybean look alike to radar in this data. We have not tested these explanations.
+
+For the fused Random Forest the macro F1-scores are 0.91 for corn, 0.92 for soybean and 0.94 for wheat. The accuracy is 0.88 for Argentina (21 of 24) and 0.97 for Brazil (29 of 30), a gap of 2 fields that we do not treat as real.
+
+The feature importance of the fused Random Forest agrees with this picture. The top three features are the mean VV (0.26), the VV minus VH difference (0.14) and the mean EVI (0.09). SAR features hold 65\% of the total importance and optical features hold 35\%. The six simple statistics together hold 61\% of the importance, and the 15 texture features share the other 39\%, so on average one simple statistic is worth much more than one texture value. This suggests that a better corn versus soybean feature from radar would help more than another texture value.
+
+\subsection{Cross-country test}
+The earlier results mix both countries in training and test, but a deployed model may meet a new country. We therefore trained the fused Random Forest on one country and tested it on the other. The accuracy is 0.52 for Argentina to Brazil and 0.45 for Brazil to Argentina, and the macro F1-score falls from 0.93 on the mixed test split to 0.51 and 0.44, an average of about 0.48. This beats guessing (0.33) but is far too low to be useful. The two directions are close and the training sets have almost the same size (133 and 137 fields), so training size does not explain the drop. A likely reason is that the two countries differ in season, climate and farming, so the same crop gives different feature values. We have not tested this. The rule for use is clear. The fusion gain holds where labelled fields of the region are available, and a new region needs labelled fields of its own or a method that adapts the features.
+
 \section{Discussion}
-Fusion helped. In nested cross validation the best fused model has a macro F1-score of 0.91 and the best single-type model has 0.81. The fused model uses both types, since its top features come from SAR and from optical.
+Three statements are supported by our results. First, fusion helps: the fused SVM scores 0.91 with random folds and 0.87 with farms held out, against 0.81 for the best single sensor. Second, the sensors are complementary, since the fused model corrects 12 of the 14 fields that only one single-sensor model got wrong. Third, the model does not carry over to another country.
 
-The size of the gain needs care. On the single test split the gain was larger, 0.93 against 0.79, so that split is probably on the high side. The gain is about 0.10 for the SVM and about 0.05 for the Random Forest, and the Random Forest value is inside the spread between folds. The test split and the cross validation also disagree on the best fused model. We therefore report the gain as a real but modest improvement and do not name one best model.
+The farm test shows that our random-split numbers were optimistic. Holding out whole farms lowers the fused scores by about 0.04 and shrinks the gain over the best single sensor from 0.10 to 0.055 for the SVM and from 0.05 to about 0.01 for the Random Forest. We therefore report the fused SVM gain as real but modest and the Random Forest gain as not shown. Three limits remain. The test set has only 54 fields. We used 270 of the 1302 fields. Those fields come from only 42 farms, so even the farm-held-out folds rest on few farms.
 
-SAR features did better than optical features in our data. A possible reason is that radar is not blocked by clouds, so the SAR features are built from complete data. We have not tested this explanation.
-
-The cross-country result is the main limit of our work. The model works well inside the mixed data but does not carry over to a new country. The YieldSAT authors also report that models lose accuracy on new regions \cite{yieldsat}. A likely reason is that the two countries have different seasons, climate and farming, so the same crop gives different feature values. We have not tested this. Our cross-country models also train on only 133 or 137 fields.
-
-Other limits are the small test set, a single split in the main table, and the use of 270 of the 1302 fields.
+SAR features did better than optical features in our data, possibly because radar is not blocked by clouds, but we have not tested this. The cross-country gap is the main limit of our work, and the YieldSAT authors also report that models lose accuracy on new regions \cite{yieldsat}.
 
 \section{Conclusion}
-% TODO Week 10: final wording once all numbers are locked.
-We built a pipeline that turns Sentinel-2 and Sentinel-1 images into field features and tested optical-only, SAR-only and fused classification of corn, soybean and wheat. Fused features gave the best macro F1-score. In nested cross validation it was 0.91 for the fused SVM against 0.81 for the best single image type. The models did not carry over from one country to the other. Future work is to use more fields, to test why the countries differ and to try adapting the features to a new country.
+We built a framework that turns Sentinel-2 and Sentinel-1 images into field features and tested optical-only, SAR-only and fused classification of corn, soybean and wheat. Fused features gave the best macro F1-score. In nested cross validation it was 0.91 for the fused SVM against 0.81 for the best single sensor, and 0.87 when whole farms were held out. The error analysis shows that the two sensors fail on different fields. The gain is modest, and for the Random Forest it almost vanishes when farms are held out. The models did not carry over from one country to the other, where the macro F1-score fell to about 0.48. Future work is to use all 1302 fields and more farms, to test why the countries differ and to adapt the features to a new country.
 
 \begin{thebibliography}{9}
 \bibitem{yieldsat} M. Miranda \textit{et al.}, ``YieldSAT: A multimodal benchmark dataset for high-resolution crop yield prediction,'' in \textit{Proc. IEEE/CVF Conf. Computer Vision and Pattern Recognition (CVPR)}, 2026, arXiv:2604.00940.
+\bibitem{sentinel1} R. Torres \textit{et al.}, ``GMES Sentinel-1 mission,'' \textit{Remote Sens. Environ.}, vol. 120, pp. 9--24, 2012.
 \bibitem{gee} N. Gorelick \textit{et al.}, ``Google Earth Engine: Planetary-scale geospatial analysis for everyone,'' \textit{Remote Sens. Environ.}, vol. 202, pp. 18--27, 2017.
 \bibitem{lee} J.-S. Lee, ``Digital image enhancement and noise filtering by use of local statistics,'' \textit{IEEE Trans. Pattern Anal. Mach. Intell.}, vol. PAMI-2, no. 2, pp. 165--168, Mar. 1980.
 \bibitem{rouse} J. W. Rouse \textit{et al.}, ``Monitoring vegetation systems in the Great Plains with ERTS,'' in \textit{Proc. 3rd ERTS Symp.}, NASA SP-351, 1974, pp. 309--317.
